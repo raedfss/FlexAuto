@@ -50,47 +50,51 @@ if (!isset($_SESSION['email'])) {
 <body>
 
     <h1>سجل الإصدارات</h1>
-    <p>الإصدار الحالي: <strong>v1.02</strong></p>
+    <p>الإصدار الحالي: <strong>v1.03</strong></p>
 
     <ul>
         <li>
-            <span class="version-title">v1.02</span> –
-            <span class="highlight">أحدث إصدار</span>
-            تحديث صفحة <code>key-code.php</code> بالكامل:
-            إعادة تنظيم الكود، تحسين التصميم والرسائل الظاهرة، منع إرسال النموذج إلا بعد اكتمال البيانات المطلوبة،
-            عرض رقم الطلب والشاسيه بطريقة احترافية، وتصحيح رابط العودة للصفحة الرئيسية إلى <code>home.php</code>.
+            <span class="version-title">v1.03</span> – 
+            <span class="highlight">تمت إضافة</span>
+            صفحة <code>ecu-tuning.php</code> لطلب تعديل برمجة ECU:
+            تصميم أنيق مطابق للهوية البصرية، دعم رفع ملفات اختيارية، إدخال اسم أداة البرمجة ونوعها (Slave أو Master)، ملاحظات إضافية، وتخزين الطلب في جدول <code>ecu_tuning_requests</code>.
         </li>
         <li>
-            <span class="version-title">v1.01</span> –
+            <span class="version-title">v1.02</span> – 
+            تحديث صفحة <code>key-code.php</code> بالكامل:
+            إعادة تنظيم الكود، تحسين التصميم، منع الإرسال بدون إكمال البيانات، وعرض الطلب بطريقة احترافية.
+        </li>
+        <li>
+            <span class="version-title">v1.01</span> – 
             تحسين التوجيه إلى <code>my_tickets.php</code> بدلًا من <code>tickets.php</code> للمستخدم العادي، 
             وإضافة زر “آخر التحديثات والتعديلات” في الصفحة الرئيسية.
         </li>
         <li>
-            <span class="version-title">v1.0</span> –
+            <span class="version-title">v1.0</span> – 
             الإصدار الأولي للموقع (الوظائف الأساسية مكتملة، بداية الاستقرار).
         </li>
         <li>
-            <span class="version-title">v0.9</span> –
+            <span class="version-title">v0.9</span> – 
             مرحلة Beta لاختبار الميزات قبل الإصدار النهائي، وإصلاح مجموعة من الأخطاء.
         </li>
         <li>
-            <span class="version-title">v0.7</span> –
+            <span class="version-title">v0.7</span> – 
             تحسينات عامة في التصميم وإضافة إشعارات تنبيه للمستخدم، وإصلاح بعض الأخطاء في النموذج الأولي.
         </li>
         <li>
-            <span class="version-title">v0.5</span> –
+            <span class="version-title">v0.5</span> – 
             نموذج أولي (Prototype): إمكانية إرسال تذكرة وتخزينها في قاعدة البيانات.
         </li>
         <li>
-            <span class="version-title">v0.4</span> –
+            <span class="version-title">v0.4</span> – 
             تطوير واجهات أولية (Home, Login) وربطها بقاعدة البيانات للتحقق من المستخدم.
         </li>
         <li>
-            <span class="version-title">v0.2</span> –
+            <span class="version-title">v0.2</span> – 
             إنشاء صفحات التسجيل وتسجيل الدخول، مع تكوين الجداول الأساسية (Users, Tickets).
         </li>
         <li>
-            <span class="version-title">v0.1</span> –
+            <span class="version-title">v0.1</span> – 
             مرحلة بدء المشروع: تهيئة بيئة التطوير (XAMPP) وإنشاء الهيكلية الأولية للملفات.
         </li>
     </ul>

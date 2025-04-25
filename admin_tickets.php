@@ -1,59 +1,218 @@
 <?php
 session_start();
-include 'db_connect.php';
 
+// التحقق من تسجيل الدخول والصلاحيات
 if (!isset($_SESSION['email']) || $_SESSION['user_type'] !== 'admin') {
     header("Location: login.php");
     exit;
 }
 
+require_once 'includes/db.php';
+
 // تحديث حالة التذكرة عند النقر على "تمت المراجعة"
-if (isset($_GET['mark_seen'])) {
+if (isset($_GET['mark_seen']) && isset($_GET['type'])) {
     $id = intval($_GET['mark_seen']);
-    $conn->query("UPDATE tickets SET is_seen = 1 WHERE id = $id");
+    $type = $_GET['type'];
+    
+    switch ($type) {
+        case 'airbag':
+            $pdo->query("UPDATE airbag_requests SET status = 1 WHERE id = $id");
+            break;
+        case 'ecu':
+            $pdo->query("UPDATE ecu_tuning_requests SET status = 1 WHERE id = $id");
+            break;
+        case 'key':
+            $pdo->query("UPDATE key_requests SET status = 1 WHERE id = $id");
+            break;
+        case 'diagnostic':
+            $pdo->query("UPDATE diagnostic_requests SET status = 1 WHERE id = $id");
+            break;
+    }
+    
     header("Location: admin_tickets.php");
     exit;
 }
 
-// إلغاء التذكرة (يمكن تعديل هذا حسب منطق التطبيق)
-if (isset($_GET['cancel_ticket'])) {
+// إكمال الطلب
+if (isset($_GET['complete_ticket']) && isset($_GET['type'])) {
+    $id = intval($_GET['complete_ticket']);
+    $type = $_GET['type'];
+    
+    switch ($type) {
+        case 'airbag':
+            $pdo->query("UPDATE airbag_requests SET status = 2 WHERE id = $id");
+            break;
+        case 'ecu':
+            $pdo->query("UPDATE ecu_tuning_requests SET status = 2 WHERE id = $id");
+            break;
+        case 'key':
+            $pdo->query("UPDATE key_requests SET status = 2 WHERE id = $id");
+            break;
+        case 'diagnostic':
+            $pdo->query("UPDATE diagnostic_requests SET status = 2 WHERE id = $id");
+            break;
+    }
+    
+    header("Location: admin_tickets.php");
+    exit;
+}
+
+// إلغاء التذكرة
+if (isset($_GET['cancel_ticket']) && isset($_GET['type'])) {
     $id = intval($_GET['cancel_ticket']);
-    // هنا يمكنك إضافة الكود الخاص بإلغاء التذكرة حسب احتياجاتك
-    // مثال: $conn->query("UPDATE tickets SET status = 'cancelled' WHERE id = $id");
+    $type = $_GET['type'];
+    
+    switch ($type) {
+        case 'airbag':
+            $pdo->query("UPDATE airbag_requests SET status = 3 WHERE id = $id");
+            break;
+        case 'ecu':
+            $pdo->query("UPDATE ecu_tuning_requests SET status = 3 WHERE id = $id");
+            break;
+        case 'key':
+            $pdo->query("UPDATE key_requests SET status = 3 WHERE id = $id");
+            break;
+        case 'diagnostic':
+            $pdo->query("UPDATE diagnostic_requests SET status = 3 WHERE id = $id");
+            break;
+    }
+    
     header("Location: admin_tickets.php");
     exit;
 }
 
-// جلب كل التذاكر - نحافظ على الاستعلام الأصلي
-$tickets = $conn->query("SELECT * FROM tickets ORDER BY created_at DESC");
-?>
+// تحديد نوع التذكرة النشط (الافتراضي: الكل)
+$activeTab = isset($_GET['tab']) ? $_GET['tab'] : 'all';
 
+// دالة مساعدة لتحديد حالة التبويب النشط
+function isActiveTab($tab) {
+    global $activeTab;
+    return $activeTab === $tab ? 'active' : '';
+}
+
+// استعلامات للحصول على طلبات كل نوع
+$airbagQuery = "SELECT id, username, car_make, ecu_model AS service_detail, vin, status, created_at, 
+                'airbag' AS request_type, 'مسح بيانات Airbag' AS service_name 
+                FROM airbag_requests ORDER BY created_at DESC";
+
+$ecuQuery = "SELECT id, username, car_make, tool_type AS service_detail, vin, status, created_at, 
+             'ecu' AS request_type, 'تعديل برمجة ECU' AS service_name 
+             FROM ecu_tuning_requests ORDER BY created_at DESC";
+
+$keyQuery = "SELECT id, username, car_make, ecu_type AS service_detail, vin, status, created_at, 
+             'key' AS request_type, 'برمجة المفتاح' AS service_name 
+             FROM key_requests ORDER BY created_at DESC";
+
+$diagnosticQuery = "SELECT id, username, car_make, issue_desc AS service_detail, vin, status, created_at, 
+                    'diagnostic' AS request_type, 'تشخيص أعطال' AS service_name 
+                    FROM diagnostic_requests ORDER BY created_at DESC";
+
+// تنفيذ الاستعلامات
+try {
+    $airbag_requests = $pdo->query($airbagQuery)->fetchAll(PDO::FETCH_ASSOC);
+} catch (PDOException $e) {
+    $airbag_requests = [];
+}
+
+try {
+    $ecu_requests = $pdo->query($ecuQuery)->fetchAll(PDO::FETCH_ASSOC);
+} catch (PDOException $e) {
+    $ecu_requests = [];
+}
+
+try {
+    $key_requests = $pdo->query($keyQuery)->fetchAll(PDO::FETCH_ASSOC);
+} catch (PDOException $e) {
+    $key_requests = [];
+}
+
+try {
+    $diagnostic_requests = $pdo->query($diagnosticQuery)->fetchAll(PDO::FETCH_ASSOC);
+} catch (PDOException $e) {
+    $diagnostic_requests = [];
+}
+
+// دمج جميع أنواع الطلبات معًا للعرض الكامل
+$all_requests = array_merge($airbag_requests, $ecu_requests, $key_requests, $diagnostic_requests);
+
+// ترتيب جميع الطلبات حسب تاريخ الإنشاء (الأحدث أولاً)
+usort($all_requests, function($a, $b) {
+    return strtotime($b['created_at']) - strtotime($a['created_at']);
+});
+
+// تحديد الطلبات المراد عرضها بناءً على التبويب النشط
+$display_requests = [];
+switch ($activeTab) {
+    case 'airbag':
+        $display_requests = $airbag_requests;
+        break;
+    case 'ecu':
+        $display_requests = $ecu_requests;
+        break;
+    case 'key':
+        $display_requests = $key_requests;
+        break;
+    case 'diagnostic':
+        $display_requests = $diagnostic_requests;
+        break;
+    default:
+        $display_requests = $all_requests;
+}
+
+// احصائيات
+$total_requests = count($all_requests);
+$new_requests = count(array_filter($all_requests, function($req) { return $req['status'] == 0; }));
+$in_progress = count(array_filter($all_requests, function($req) { return $req['status'] == 1; }));
+$completed = count(array_filter($all_requests, function($req) { return $req['status'] == 2; }));
+$cancelled = count(array_filter($all_requests, function($req) { return $req['status'] == 3; }));
+
+// البحث في الطلبات
+$search_term = isset($_GET['search']) ? $_GET['search'] : '';
+if (!empty($search_term)) {
+    $display_requests = array_filter($display_requests, function($req) use ($search_term) {
+        return stripos($req['username'], $search_term) !== false || 
+               stripos($req['vin'], $search_term) !== false || 
+               stripos($req['car_make'], $search_term) !== false ||
+               stripos($req['service_name'], $search_term) !== false;
+    });
+}
+
+// الفلترة حسب الحالة
+$status_filter = isset($_GET['status_filter']) ? $_GET['status_filter'] : '';
+if ($status_filter !== '') {
+    $display_requests = array_filter($display_requests, function($req) use ($status_filter) {
+        return $req['status'] == $status_filter;
+    });
+}
+?>
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>نظام إدارة تذاكر FlexAuto</title>
-    <!-- Font Awesome -->
+    <title>إدارة التذاكر | FlexAuto</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <!-- Google Fonts - Cairo for Arabic -->
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
         :root {
             --primary: #0099ff;
             --primary-dark: #0077cc;
             --secondary: #00d9ff;
-            --dark-bg: #0f172a;
-            --darker-bg: #070e1b;
-            --card-bg: #1a1f2e;
+            --dark-bg: #1a1f2e;
+            --darker-bg: #0f172a;
+            --card-bg: #2a3142;
             --success: #10b981;
             --warning: #f59e0b;
             --danger: #ef4444;
+            --info: #3b82f6;
             --light-text: #f8fafc;
             --muted-text: #94a3b8;
             --border-color: rgba(255, 255, 255, 0.1);
+            
+            /* خاص بأنواع الطلبات */
+            --airbag-color: #8b5cf6;
+            --ecu-color: #10b981;
+            --key-color: #f59e0b;
+            --diagnostic-color: #3b82f6;
         }
         
         * {
@@ -63,29 +222,28 @@ $tickets = $conn->query("SELECT * FROM tickets ORDER BY created_at DESC");
         }
         
         body {
-            font-family: 'Cairo', sans-serif;
+            font-family: 'Segoe UI', 'Cairo', sans-serif;
             background-color: var(--dark-bg);
             color: var(--light-text);
-            margin: 0;
-            padding: 0;
             min-height: 100vh;
-            position: relative;
-            padding-bottom: 80px;
+            display: flex;
+            flex-direction: column;
         }
-
-        /* ---- الهيدر ---- */
+        
+        /* الشريط العلوي */
         .top-bar {
             height: 4px;
             background: linear-gradient(90deg, var(--primary), var(--secondary));
         }
         
+        /* الهيدر */
         header {
             background-color: var(--darker-bg);
-            padding: 20px;
+            padding: 15px 20px;
             display: flex;
             justify-content: space-between;
             align-items: center;
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
             position: sticky;
             top: 0;
             z-index: 100;
@@ -94,294 +252,402 @@ $tickets = $conn->query("SELECT * FROM tickets ORDER BY created_at DESC");
         .logo {
             display: flex;
             align-items: center;
-            gap: 12px;
-            font-size: 22px;
+            gap: 10px;
+            font-size: 20px;
             font-weight: bold;
             color: var(--secondary);
         }
         
-        .logo i {
-            font-size: 24px;
-        }
-        
-        .admin-controls {
+        .nav-links {
             display: flex;
             gap: 15px;
         }
         
-        .admin-controls a {
+        .nav-link {
             text-decoration: none;
             color: var(--light-text);
-            display: flex;
-            align-items: center;
-            gap: 6px;
-            padding: 8px 12px;
+            padding: 6px 12px;
             border-radius: 4px;
             font-size: 14px;
-            transition: all 0.2s ease;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 5px;
         }
         
-        .admin-controls a:hover {
+        .nav-link:hover {
             background-color: rgba(255, 255, 255, 0.1);
         }
-
-        /* ---- المحتوى الرئيسي ---- */
+        
+        /* المحتوى الرئيسي */
         .container {
-            max-width: 1200px;
-            margin: 30px auto;
+            max-width: 1300px;
+            margin: 20px auto;
             padding: 0 20px;
+            flex: 1;
         }
         
-        .page-title {
-            margin-bottom: 25px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-        
-        .title-text {
-            font-size: 24px;
-            font-weight: 700;
-            color: var(--secondary);
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
-        
-        .actions-row {
+        .page-header {
             display: flex;
             justify-content: space-between;
             align-items: center;
             margin-bottom: 20px;
         }
         
-        .ticket-stats {
-            display: flex;
-            gap: 15px;
-        }
-        
-        .stat-item {
-            background-color: var(--card-bg);
-            padding: 10px 15px;
-            border-radius: 8px;
+        .page-title {
+            font-size: 24px;
+            font-weight: bold;
+            color: var(--secondary);
             display: flex;
             align-items: center;
-            gap: 8px;
-            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-        }
-        
-        .stat-item i {
-            color: var(--primary);
-        }
-        
-        .search-box {
-            display: flex;
             gap: 10px;
         }
         
-        .search-box input {
-            padding: 8px 15px;
-            border-radius: 6px;
-            border: 1px solid var(--border-color);
-            background-color: rgba(255, 255, 255, 0.1);
-            color: var(--light-text);
-            font-family: 'Cairo', sans-serif;
+        /* إحصائيات الطلبات */
+        .stats-cards {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
         }
         
-        .search-box input::placeholder {
+        .stat-card {
+            background-color: var(--card-bg);
+            border-radius: 10px;
+            padding: 15px;
+            display: flex;
+            flex-direction: column;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+        
+        .stat-card .label {
+            font-size: 14px;
             color: var(--muted-text);
+            margin-bottom: 5px;
+        }
+        
+        .stat-card .value {
+            font-size: 24px;
+            font-weight: bold;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .stat-icon {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 18px;
+        }
+        
+        /* التبويبات */
+        .tabs {
+            display: flex;
+            gap: 2px;
+            margin-bottom: 20px;
+            background-color: var(--card-bg);
+            border-radius: 10px;
+            padding: 5px;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+        }
+        
+        .tab {
+            flex: 1;
+            text-align: center;
+            padding: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            border-radius: 8px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 5px;
+            color: var(--muted-text);
+            text-decoration: none;
+        }
+        
+        .tab.active {
+            background-color: rgba(255, 255, 255, 0.1);
+            color: var(--light-text);
+        }
+        
+        .tab:hover {
+            background-color: rgba(255, 255, 255, 0.05);
+        }
+        
+        .tab .count {
+            background-color: rgba(255, 255, 255, 0.1);
+            padding: 2px 8px;
+            border-radius: 20px;
+            font-size: 12px;
+        }
+        
+        .tab.active .count {
+            background-color: var(--primary);
+        }
+        
+        /* شريط البحث والفلاتر */
+        .filters-row {
+            display: flex;
+            gap: 15px;
+            margin-bottom: 20px;
+            align-items: center;
+            justify-content: space-between;
+        }
+        
+        .search-box {
+            flex: 1;
+            display: flex;
+            max-width: 500px;
+        }
+        
+        .search-box input {
+            flex: 1;
+            padding: 10px 15px;
+            border: none;
+            background-color: var(--card-bg);
+            color: var(--light-text);
+            border-radius: 8px 0 0 8px;
+            font-family: inherit;
         }
         
         .search-box button {
-            padding: 8px 15px;
-            border-radius: 6px;
             background-color: var(--primary);
             color: white;
             border: none;
+            padding: 10px 15px;
+            border-radius: 0 8px 8px 0;
             cursor: pointer;
-            font-family: 'Cairo', sans-serif;
             display: flex;
             align-items: center;
-            gap: 6px;
-            transition: all 0.3s ease;
+            gap: 5px;
         }
         
-        .search-box button:hover {
-            background-color: var(--primary-dark);
+        .filter-dropdown select {
+            padding: 10px;
+            background-color: var(--card-bg);
+            color: var(--light-text);
+            border: none;
+            border-radius: 8px;
+            font-family: inherit;
+            cursor: pointer;
         }
-
-        /* ---- جدول التذاكر ---- */
+        
+        /* جدول الطلبات */
         .tickets-table {
             width: 100%;
             border-collapse: separate;
             border-spacing: 0;
             background-color: var(--card-bg);
-            border-radius: 12px;
+            border-radius: 10px;
             overflow: hidden;
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-            margin-bottom: 30px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+            margin-bottom: 20px;
         }
         
         .tickets-table th {
             background-color: rgba(0, 0, 0, 0.2);
-            color: var(--secondary);
+            padding: 15px 10px;
             font-weight: 600;
-            text-align: center;
-            padding: 16px;
-            font-size: 14px;
-            letter-spacing: 0.5px;
-            border-bottom: 2px solid rgba(0, 153, 255, 0.2);
+            text-align: right;
+            color: var(--secondary);
+            border-bottom: 1px solid var(--border-color);
         }
         
         .tickets-table td {
-            padding: 16px;
-            text-align: center;
+            padding: 12px 10px;
             border-bottom: 1px solid var(--border-color);
             vertical-align: middle;
+        }
+        
+        .tickets-table tr:hover {
+            background-color: rgba(255, 255, 255, 0.05);
         }
         
         .tickets-table tr:last-child td {
             border-bottom: none;
         }
         
-        .tickets-table tr {
-            transition: all 0.2s ease;
-        }
-        
-        .tickets-table tr:hover {
-            background-color: rgba(255, 255, 255, 0.05);
-        }
-
-        /* ---- أنماط عناصر الجدول ---- */
-        .ticket-id {
-            font-weight: 700;
-            color: var(--primary);
-            white-space: nowrap;
-        }
-        
-        .car-info {
-            display: flex;
-            flex-direction: column;
-            gap: 4px;
-            align-items: center;
-        }
-        
-        .car-model {
-            font-weight: 600;
-        }
-        
-        .chassis-number {
-            font-size: 12px;
-            color: var(--muted-text);
-        }
-        
-        .service-tag {
-            background: rgba(0, 153, 255, 0.15);
-            color: var(--secondary);
-            padding: 6px 12px;
+        /* حالات الطلبات وأنواعها */
+        .service-badge {
+            padding: 5px 10px;
             border-radius: 20px;
             font-size: 12px;
-            font-weight: 600;
-            display: inline-block;
-            border: 1px solid rgba(0, 153, 255, 0.3);
-        }
-        
-        .status-badge {
-            padding: 6px 12px;
-            border-radius: 20px;
-            display: flex;
+            font-weight: bold;
+            display: inline-flex;
             align-items: center;
-            justify-content: center;
-            gap: 6px;
-            font-size: 13px;
-            font-weight: 600;
-            width: max-content;
-            margin: 0 auto;
+            gap: 5px;
         }
         
-        .status-reviewed {
+        .service-airbag {
+            background-color: rgba(139, 92, 246, 0.15);
+            color: var(--airbag-color);
+            border: 1px solid rgba(139, 92, 246, 0.3);
+        }
+        
+        .service-ecu {
             background-color: rgba(16, 185, 129, 0.15);
-            color: var(--success);
+            color: var(--ecu-color);
             border: 1px solid rgba(16, 185, 129, 0.3);
         }
         
-        .status-pending {
+        .service-key {
+            background-color: rgba(245, 158, 11, 0.15);
+            color: var(--key-color);
+            border: 1px solid rgba(245, 158, 11, 0.3);
+        }
+        
+        .service-diagnostic {
+            background-color: rgba(59, 130, 246, 0.15);
+            color: var(--info);
+            border: 1px solid rgba(59, 130, 246, 0.3);
+        }
+        
+        .status-badge {
+            padding: 5px 10px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: bold;
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+        }
+        
+        .status-new {
+            background-color: rgba(59, 130, 246, 0.15);
+            color: var(--info);
+            border: 1px solid rgba(59, 130, 246, 0.3);
+        }
+        
+        .status-in-progress {
             background-color: rgba(245, 158, 11, 0.15);
             color: var(--warning);
             border: 1px solid rgba(245, 158, 11, 0.3);
         }
         
-        /* ---- زر الإجراءات ---- */
+        .status-completed {
+            background-color: rgba(16, 185, 129, 0.15);
+            color: var(--success);
+            border: 1px solid rgba(16, 185, 129, 0.3);
+        }
+        
+        .status-cancelled {
+            background-color: rgba(239, 68, 68, 0.15);
+            color: var(--danger);
+            border: 1px solid rgba(239, 68, 68, 0.3);
+        }
+        
+        /* أزرار الإجراءات */
         .action-btn {
-            padding: 8px 16px;
+            padding: 6px 12px;
             border-radius: 6px;
-            text-decoration: none;
+            font-size: 13px;
             font-weight: 600;
-            background-color: var(--primary);
-            color: white;
-            transition: all 0.3s ease;
             display: inline-flex;
             align-items: center;
-            gap: 6px;
-            border: none;
+            gap: 5px;
+            text-decoration: none;
+            transition: all 0.2s;
             cursor: pointer;
-            font-family: 'Cairo', sans-serif;
-            font-size: 13px;
+            border: none;
         }
         
-        .action-btn:hover {
+        .btn-primary {
+            background-color: var(--primary);
+            color: white;
+        }
+        
+        .btn-primary:hover {
             background-color: var(--primary-dark);
-            transform: translateY(-2px);
-            box-shadow: 0 3px 10px rgba(0, 153, 255, 0.3);
         }
         
-        .btn-disabled {
-            background-color: #475569;
-            cursor: default;
+        .btn-success {
+            background-color: var(--success);
+            color: white;
         }
         
-        .btn-disabled:hover {
-            background-color: #475569;
-            transform: none;
-            box-shadow: none;
+        .btn-success:hover {
+            background-color: #0da271;
         }
         
-        /* ---- قائمة الإجراءات المنسدلة ---- */
-        .dropdown {
+        .btn-danger {
+            background-color: var(--danger);
+            color: white;
+        }
+        
+        .btn-danger:hover {
+            background-color: #e02424;
+        }
+        
+        .btn-warning {
+            background-color: var(--warning);
+            color: white;
+        }
+        
+        .btn-warning:hover {
+            background-color: #d97706;
+        }
+        
+        .btn-info {
+            background-color: var(--info);
+            color: white;
+        }
+        
+        .btn-info:hover {
+            background-color: #2563eb;
+        }
+        
+        .btn-outline {
+            background-color: transparent;
+            border: 1px solid var(--border-color);
+            color: var(--light-text);
+        }
+        
+        .btn-outline:hover {
+            background-color: rgba(255, 255, 255, 0.1);
+        }
+        
+        .actions-dropdown {
             position: relative;
             display: inline-block;
         }
         
-        .dropdown-content {
-            display: none;
+        .dropdown-menu {
             position: absolute;
-            right: 0;
-            background-color: var(--dark-bg);
-            min-width: 180px;
-            box-shadow: 0 8px 16px rgba(0, 0, 0, 0.2);
-            z-index: 1;
+            left: 0;
+            top: 100%;
+            background-color: var(--card-bg);
             border-radius: 8px;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
+            min-width: 200px;
+            z-index: 10;
+            margin-top: 5px;
+            display: none;
             overflow: hidden;
             border: 1px solid var(--border-color);
         }
         
-        .dropdown:hover .dropdown-content {
+        .actions-dropdown:hover .dropdown-menu {
             display: block;
         }
         
         .dropdown-item {
+            padding: 10px 15px;
+            text-decoration: none;
+            color: var(--light-text);
             display: flex;
             align-items: center;
             gap: 8px;
-            padding: 12px 16px;
-            text-decoration: none;
-            color: var(--light-text);
-            transition: all 0.2s ease;
-            font-size: 13px;
+            transition: all 0.2s;
         }
         
         .dropdown-item:hover {
-            background-color: rgba(0, 153, 255, 0.1);
+            background-color: rgba(255, 255, 255, 0.1);
         }
         
         .dropdown-divider {
@@ -389,54 +655,24 @@ $tickets = $conn->query("SELECT * FROM tickets ORDER BY created_at DESC");
             background-color: var(--border-color);
         }
         
-        .dropdown-item.delete {
-            color: var(--danger);
-        }
-        
-        .dropdown-item.delete:hover {
-            background-color: rgba(239, 68, 68, 0.1);
-        }
-        
-        .more-btn {
-            background-color: transparent;
-            border: 1px solid var(--border-color);
-            color: var(--light-text);
-            padding: 8px;
-            border-radius: 6px;
-            cursor: pointer;
-            transition: all 0.2s ease;
-        }
-        
-        .more-btn:hover {
-            background-color: rgba(255, 255, 255, 0.1);
-        }
-
-        /* ---- الفوتر ---- */
+        /* فوتر الصفحة */
         footer {
             background-color: var(--darker-bg);
-            color: var(--muted-text);
+            padding: 15px;
             text-align: center;
-            padding: 20px;
-            position: absolute;
-            bottom: 0;
-            width: 100%;
+            font-size: 14px;
+            color: var(--muted-text);
             border-top: 1px solid var(--border-color);
         }
-
-        /* ---- التوافقية مع الموبايل ---- */
+        
+        /* توافقية الموبايل */
         @media (max-width: 992px) {
-            .actions-row {
-                flex-direction: column;
-                align-items: flex-start;
-                gap: 15px;
+            .stats-cards {
+                grid-template-columns: repeat(2, 1fr);
             }
             
-            .search-box {
-                width: 100%;
-            }
-            
-            .search-box input {
-                flex: 1;
+            .tabs {
+                flex-wrap: wrap;
             }
         }
         
@@ -445,28 +681,31 @@ $tickets = $conn->query("SELECT * FROM tickets ORDER BY created_at DESC");
                 display: none;
             }
             
+            .stats-cards {
+                grid-template-columns: 1fr;
+            }
+            
+            .filters-row {
+                flex-direction: column;
+                align-items: stretch;
+            }
+            
+            .search-box {
+                max-width: 100%;
+            }
+            
+            .tickets-table {
+                font-size: 12px;
+            }
+            
             .tickets-table th, 
             .tickets-table td {
-                padding: 12px 8px;
-                font-size: 12px;
+                padding: 8px 5px;
             }
             
             .action-btn {
-                padding: 6px 10px;
+                padding: 5px 8px;
                 font-size: 12px;
-            }
-            
-            .admin-controls {
-                display: none;
-            }
-            
-            .mobile-menu-btn {
-                display: block;
-                background: none;
-                border: none;
-                color: var(--light-text);
-                font-size: 20px;
-                cursor: pointer;
             }
         }
     </style>
@@ -478,163 +717,296 @@ $tickets = $conn->query("SELECT * FROM tickets ORDER BY created_at DESC");
 <header>
     <div class="logo">
         <i class="fas fa-ticket-alt"></i>
-        <span>FlexAuto</span> | نظام إدارة تذاكر البرمجة
+        FlexAuto
     </div>
-    <div class="admin-controls">
-        <a href="dashboard.php"><i class="fas fa-tachometer-alt"></i> لوحة التحكم</a>
-        <a href="customers.php"><i class="fas fa-users"></i> العملاء</a>
-        <a href="reports.php"><i class="fas fa-chart-bar"></i> التقارير</a>
-        <a href="settings.php"><i class="fas fa-cog"></i> الإعدادات</a>
-        <a href="logout.php"><i class="fas fa-sign-out-alt"></i> تسجيل الخروج</a>
-    </div>
-    <button class="mobile-menu-btn hide-mobile">
-        <i class="fas fa-bars"></i>
-    </button>
-</header>
-
-<div class="container">
-    <div class="page-title">
-        <div class="title-text">
-            <i class="fas fa-clipboard-list"></i>
-            إدارة التذاكر
-        </div>
+    <div class="nav-links">
+        <a href="dashboard.php" class="nav-link">
+            <i class="fas fa-stethoscope"></i>
+            <span>تشخيص الأعطال</span>
+            <span class="count"><?= count($diagnostic_requests) ?></span>
+        </a>
     </div>
     
-    <div class="actions-row">
-        <div class="ticket-stats">
-            <?php
-            $total = $tickets->num_rows;
-            // ملاحظة: يجب التأكد من وجود عمود is_seen في جدول البيانات
-            $seen_count = 0;
-            $unseen_count = 0;
-            
-            // إعادة ضبط مؤشر النتائج
-            $tickets->data_seek(0);
-            
-            // حساب التذاكر المراجعة وغير المراجعة
-            while ($row = $tickets->fetch_assoc()) {
-                if (isset($row['is_seen']) && $row['is_seen'] == 1) {
-                    $seen_count++;
-                } else {
-                    $unseen_count++;
-                }
-            }
-            
-            // إعادة ضبط مؤشر النتائج مرة أخرى
-            $tickets->data_seek(0);
-            ?>
-            <div class="stat-item">
-                <i class="fas fa-ticket-alt"></i>
-                <span>إجمالي التذاكر: <strong><?= $total ?></strong></span>
-            </div>
-            <div class="stat-item">
-                <i class="fas fa-check-circle"></i>
-                <span>تمت المراجعة: <strong><?= $seen_count ?></strong></span>
-            </div>
-            <div class="stat-item">
-                <i class="fas fa-clock"></i>
-                <span>بانتظار المراجعة: <strong><?= $unseen_count ?></strong></span>
-            </div>
-        </div>
-        
-        <div class="search-box">
-            <input type="text" placeholder="بحث عن تذكرة..." id="searchInput">
-            <button>
+    <!-- البحث والفلاتر -->
+    <div class="filters-row">
+        <form class="search-box" method="GET" action="">
+            <input type="hidden" name="tab" value="<?= $activeTab ?>">
+            <input type="text" name="search" placeholder="بحث عن طلب..." value="<?= htmlspecialchars($search_term) ?>">
+            <button type="submit">
                 <i class="fas fa-search"></i>
                 بحث
             </button>
+        </form>
+        
+        <div class="filter-dropdown">
+            <select name="status_filter" id="status-filter" onchange="this.form.submit()">
+                <option value="">جميع الحالات</option>
+                <option value="0" <?= $status_filter === '0' ? 'selected' : '' ?>>جديد</option>
+                <option value="1" <?= $status_filter === '1' ? 'selected' : '' ?>>قيد المعالجة</option>
+                <option value="2" <?= $status_filter === '2' ? 'selected' : '' ?>>مكتمل</option>
+                <option value="3" <?= $status_filter === '3' ? 'selected' : '' ?>>ملغي</option>
+            </select>
         </div>
     </div>
     
+    <!-- جدول الطلبات -->
     <table class="tickets-table">
         <thead>
             <tr>
-                <th>رقم</th>
-                <th>العميل</th>
-                <th>الهاتف</th>
+                <th width="60">#</th>
+                <th>المستخدم</th>
+                <th>نوع الطلب</th>
+                <th class="hide-mobile">التاريخ</th>
                 <th>السيارة</th>
-                <th class="hide-mobile">الشاسيه</th>
-                <th>الخدمة</th>
+                <th>رقم الشاسيه</th>
                 <th>الحالة</th>
                 <th>الإجراءات</th>
             </tr>
         </thead>
         <tbody>
-            <?php while ($row = $tickets->fetch_assoc()): ?>
-            <tr>
-                <td><span class="ticket-id">FLEX-<?= $row['id'] ?></span></td>
-                <td><?= htmlspecialchars($row['username']) ?></td>
-                <td><?= htmlspecialchars($row['phone']) ?></td>
-                <td>
-                    <div class="car-info">
-                        <div class="car-model"><?= htmlspecialchars($row['car_type']) ?></div>
-                        <div class="chassis-number hide-mobile"><?= substr(htmlspecialchars($row['chassis']), 0, 8) ?>...</div>
-                    </div>
-                </td>
-                <td class="hide-mobile"><?= htmlspecialchars($row['chassis']) ?></td>
-                <td><span class="service-tag"><?= htmlspecialchars($row['service_type']) ?></span></td>
-                <td>
-                    <?php if (isset($row['is_seen']) && $row['is_seen'] == 1): ?>
-                        <div class="status-badge status-reviewed">
-                            <i class="fas fa-check-circle"></i>
-                            تمت المراجعة
-                        </div>
-                    <?php else: ?>
-                        <div class="status-badge status-pending">
-                            <i class="fas fa-clock"></i>
-                            قيد الانتظار
-                        </div>
-                    <?php endif; ?>
-                </td>
-                <td>
-                    <div class="dropdown">
-                        <?php if (!isset($row['is_seen']) || $row['is_seen'] != 1): ?>
-                            <a href="?mark_seen=<?= $row['id'] ?>" class="action-btn">
-                                <i class="fas fa-check"></i> تمت المراجعة
-                            </a>
-                        <?php else: ?>
-                            <button class="action-btn btn-disabled">
-                                <i class="fas fa-check-circle"></i> تم
-                            </button>
-                        <?php endif; ?>
-                        
-                        <button class="more-btn">
-                            <i class="fas fa-ellipsis-v"></i>
-                        </button>
-                        
-                        <div class="dropdown-content">
-                            <a href="ticket_details.php?id=<?= $row['id'] ?>" class="dropdown-item">
-                                <i class="fas fa-eye"></i> عرض التفاصيل
-                            </a>
-                            <a href="mailto:customer@example.com" class="dropdown-item">
-                                <i class="fas fa-envelope"></i> التواصل مع العميل
-                            </a>
-                            <a href="tel:<?= htmlspecialchars($row['phone']) ?>" class="dropdown-item">
-                                <i class="fas fa-phone"></i> اتصال بالعميل
-                            </a>
-                            <div class="dropdown-divider"></div>
-                            <a href="update_status.php?id=<?= $row['id'] ?>" class="dropdown-item">
-                                <i class="fas fa-edit"></i> تحديث الحالة
-                            </a>
-                            <a href="assign_ticket.php?id=<?= $row['id'] ?>" class="dropdown-item">
-                                <i class="fas fa-user-plus"></i> تعيين للفني
-                            </a>
-                            <div class="dropdown-divider"></div>
-                            <a href="?cancel_ticket=<?= $row['id'] ?>" class="dropdown-item delete" onclick="return confirm('هل أنت متأكد من إلغاء هذه التذكرة؟')">
-                                <i class="fas fa-ban"></i> إلغاء التذكرة
-                            </a>
-                        </div>
-                    </div>
-                </td>
-            </tr>
-            <?php endwhile; ?>
+            <?php if (count($display_requests) > 0): ?>
+                <?php foreach ($display_requests as $request): ?>
+                    <tr>
+                        <td><?= $request['id'] ?></td>
+                        <td><?= htmlspecialchars($request['username']) ?></td>
+                        <td>
+                            <?php 
+                            $service_class = '';
+                            switch ($request['request_type']) {
+                                case 'airbag':
+                                    $service_class = 'service-airbag';
+                                    $icon = 'fa-car-crash';
+                                    break;
+                                case 'ecu':
+                                    $service_class = 'service-ecu';
+                                    $icon = 'fa-microchip';
+                                    break;
+                                case 'key':
+                                    $service_class = 'service-key';
+                                    $icon = 'fa-key';
+                                    break;
+                                case 'diagnostic':
+                                    $service_class = 'service-diagnostic';
+                                    $icon = 'fa-stethoscope';
+                                    break;
+                            }
+                            ?>
+                            <span class="service-badge <?= $service_class ?>">
+                                <i class="fas <?= $icon ?>"></i>
+                                <?= htmlspecialchars($request['service_name']) ?>
+                            </span>
+                        </td>
+                        <td class="hide-mobile"><?= date('Y/m/d', strtotime($request['created_at'])) ?></td>
+                        <td><?= htmlspecialchars($request['car_make']) ?></td>
+                        <td><?= htmlspecialchars($request['vin']) ?></td>
+                        <td>
+                            <?php
+                            $status_class = '';
+                            $status_text = '';
+                            $status_icon = '';
+                            
+                            switch ($request['status']) {
+                                case 0:
+                                    $status_class = 'status-new';
+                                    $status_text = 'جديد';
+                                    $status_icon = 'fa-bell';
+                                    break;
+                                case 1:
+                                    $status_class = 'status-in-progress';
+                                    $status_text = 'قيد المعالجة';
+                                    $status_icon = 'fa-clock';
+                                    break;
+                                case 2:
+                                    $status_class = 'status-completed';
+                                    $status_text = 'مكتمل';
+                                    $status_icon = 'fa-check-circle';
+                                    break;
+                                case 3:
+                                    $status_class = 'status-cancelled';
+                                    $status_text = 'ملغي';
+                                    $status_icon = 'fa-ban';
+                                    break;
+                            }
+                            ?>
+                            <span class="status-badge <?= $status_class ?>">
+                                <i class="fas <?= $status_icon ?>"></i>
+                                <?= $status_text ?>
+                            </span>
+                        </td>
+                        <td>
+                            <div class="actions-dropdown">
+                                <button class="action-btn btn-outline">
+                                    <i class="fas fa-ellipsis-v"></i>
+                                    الإجراءات
+                                </button>
+                                <div class="dropdown-menu">
+                                    <a href="ticket_details.php?id=<?= $request['id'] ?>&type=<?= $request['request_type'] ?>" class="dropdown-item">
+                                        <i class="fas fa-eye"></i>
+                                        عرض التفاصيل
+                                    </a>
+                                    
+                                    <?php if ($request['status'] == 0): ?>
+                                        <a href="?mark_seen=<?= $request['id'] ?>&type=<?= $request['request_type'] ?>" class="dropdown-item">
+                                            <i class="fas fa-check"></i>
+                                            بدء المعالجة
+                                        </a>
+                                    <?php endif; ?>
+                                    
+                                    <?php if ($request['status'] == 1): ?>
+                                        <a href="?complete_ticket=<?= $request['id'] ?>&type=<?= $request['request_type'] ?>" class="dropdown-item">
+                                            <i class="fas fa-check-double"></i>
+                                            إكمال الطلب
+                                        </a>
+                                    <?php endif; ?>
+                                    
+                                    <?php if ($request['status'] < 2): ?>
+                                        <div class="dropdown-divider"></div>
+                                        <a href="?cancel_ticket=<?= $request['id'] ?>&type=<?= $request['request_type'] ?>" class="dropdown-item" onclick="return confirm('هل أنت متأكد من إلغاء هذا الطلب؟');">
+                                            <i class="fas fa-ban"></i>
+                                            إلغاء الطلب
+                                        </a>
+                                    <?php endif; ?>
+                                </div>
+                            </div>
+                        </td>
+                    </tr>
+                <?php endforeach; ?>
+            <?php else: ?>
+                <tr>
+                    <td colspan="8" style="text-align: center; padding: 30px;">
+                        <i class="fas fa-inbox" style="font-size: 40px; color: var(--muted-text); margin-bottom: 10px;"></i>
+                        <p>لا توجد طلبات متاحة حاليًا</p>
+                    </td>
+                </tr>
+            <?php endif; ?>
         </tbody>
     </table>
 </div>
 
 <footer>
-    جميع الحقوق محفوظة &copy; <?= date('Y') ?> - FlexAuto
+    <div>جميع الحقوق محفوظة &copy; <?= date('Y') ?> FlexAuto</div>
 </footer>
 
+<script>
+    // تغيير فلتر الحالة
+    document.getElementById('status-filter').addEventListener('change', function() {
+        // تجميع المعلمات الحالية من الـ URL
+        let currentUrl = new URL(window.location.href);
+        let searchParams = currentUrl.searchParams;
+        
+        // تعيين أو تحديث معلمة الحالة
+        if (this.value) {
+            searchParams.set('status_filter', this.value);
+        } else {
+            searchParams.delete('status_filter');
+        }
+        
+        // الانتقال إلى URL الجديد
+        window.location.href = currentUrl.toString();
+    });
+</script>
+
 </body>
-</html>
+</html> fa-tachometer-alt"></i>
+            <span>لوحة التحكم</span>
+        </a>
+        <a href="admin_tickets.php" class="nav-link">
+            <i class="fas fa-ticket-alt"></i>
+            <span>التذاكر</span>
+        </a>
+        <a href="customers.php" class="nav-link">
+            <i class="fas fa-users"></i>
+            <span>العملاء</span>
+        </a>
+        <a href="reports.php" class="nav-link">
+            <i class="fas fa-chart-bar"></i>
+            <span>التقارير</span>
+        </a>
+        <a href="logout.php" class="nav-link">
+            <i class="fas fa-sign-out-alt"></i>
+            <span>تسجيل الخروج</span>
+        </a>
+    </div>
+</header>
+
+<div class="container">
+    <div class="page-header">
+        <h1 class="page-title">
+            <i class="fas fa-clipboard-list"></i>
+            إدارة التذاكر
+        </h1>
+    </div>
+    
+    <!-- إحصائيات الطلبات -->
+    <div class="stats-cards">
+        <div class="stat-card">
+            <div class="label">إجمالي الطلبات</div>
+            <div class="value">
+                <div class="stat-icon" style="background-color: rgba(59, 130, 246, 0.2); color: var(--info);">
+                    <i class="fas fa-ticket-alt"></i>
+                </div>
+                <?= $total_requests ?>
+            </div>
+        </div>
+        <div class="stat-card">
+            <div class="label">طلبات جديدة</div>
+            <div class="value">
+                <div class="stat-icon" style="background-color: rgba(59, 130, 246, 0.2); color: var(--info);">
+                    <i class="fas fa-bell"></i>
+                </div>
+                <?= $new_requests ?>
+            </div>
+        </div>
+        <div class="stat-card">
+            <div class="label">قيد المعالجة</div>
+            <div class="value">
+                <div class="stat-icon" style="background-color: rgba(245, 158, 11, 0.2); color: var(--warning);">
+                    <i class="fas fa-clock"></i>
+                </div>
+                <?= $in_progress ?>
+            </div>
+        </div>
+        <div class="stat-card">
+            <div class="label">تم إنجازه</div>
+            <div class="value">
+                <div class="stat-icon" style="background-color: rgba(16, 185, 129, 0.2); color: var(--success);">
+                    <i class="fas fa-check-circle"></i>
+                </div>
+                <?= $completed ?>
+            </div>
+        </div>
+        <div class="stat-card">
+            <div class="label">ملغية</div>
+            <div class="value">
+                <div class="stat-icon" style="background-color: rgba(239, 68, 68, 0.2); color: var(--danger);">
+                    <i class="fas fa-ban"></i>
+                </div>
+                <?= $cancelled ?>
+            </div>
+        </div>
+    </div>
+    
+    <!-- تبويبات أنواع الطلبات -->
+    <div class="tabs">
+        <a href="?tab=all" class="tab <?= isActiveTab('all') ?>">
+            <i class="fas fa-list"></i>
+            <span>جميع الطلبات</span>
+            <span class="count"><?= count($all_requests) ?></span>
+        </a>
+        <a href="?tab=airbag" class="tab <?= isActiveTab('airbag') ?>">
+            <i class="fas fa-car-crash"></i>
+            <span>مسح Airbag</span>
+            <span class="count"><?= count($airbag_requests) ?></span>
+        </a>
+        <a href="?tab=ecu" class="tab <?= isActiveTab('ecu') ?>">
+            <i class="fas fa-microchip"></i>
+            <span>برمجة ECU</span>
+            <span class="count"><?= count($ecu_requests) ?></span>
+        </a>
+        <a href="?tab=key" class="tab <?= isActiveTab('key') ?>">
+            <i class="fas fa-key"></i>
+            <span>المفاتيح</span>
+            <span class="count"><?= count($key_requests) ?></span>
+        </a>
+        <a href="?tab=diagnostic" class="tab <?= isActiveTab('diagnostic') ?>">
+            <i class="fas
