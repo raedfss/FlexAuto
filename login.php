@@ -1,25 +1,35 @@
 <?php
 session_start();
-include 'db_connect.php';
+include 'db_connect.php'; // يتصل بقاعدة البيانات إذا كنت على localhost
 
 $login_error = '';
 
 if ($_SERVER["REQUEST_METHOD"] == "POST") {
-    $email = mysqli_real_escape_string($conn, $_POST['email']);
-    $password = mysqli_real_escape_string($conn, $_POST['password']);
-
-    $sql = "SELECT * FROM users WHERE email = '$email' AND password = '$password'";
-    $result = mysqli_query($conn, $sql);
-
-    if (mysqli_num_rows($result) == 1) {
-        $user = mysqli_fetch_assoc($result);
-        $_SESSION['email'] = $user['email'];
-        $_SESSION['username'] = $user['username'];
-        $_SESSION['user_type'] = $user['role']; // حفظ نوع المستخدم
-        header("Location: home.php");
-        exit;
+    // تأكد أن الاتصال ($conn) تم بنجاح
+    if (!isset($conn) || $conn->connect_error) {
+        $login_error = "❌ فشل الاتصال بقاعدة البيانات.";
     } else {
-        $login_error = "❌ البريد الإلكتروني أو كلمة المرور غير صحيحة.";
+        $email = mysqli_real_escape_string($conn, $_POST['email']);
+        $password = mysqli_real_escape_string($conn, $_POST['password']);
+
+        $sql = "SELECT * FROM users WHERE email = ? AND password = ?";
+        $stmt = $conn->prepare($sql);
+        $stmt->bind_param("ss", $email, $password);
+        $stmt->execute();
+        $result = $stmt->get_result();
+
+        if ($result && $result->num_rows == 1) {
+            $user = $result->fetch_assoc();
+            $_SESSION['email'] = $user['email'];
+            $_SESSION['username'] = $user['username'];
+            $_SESSION['user_type'] = $user['role'];
+            header("Location: home.php");
+            exit;
+        } else {
+            $login_error = "❌ البريد الإلكتروني أو كلمة المرور غير صحيحة.";
+        }
+
+        $stmt->close();
     }
 }
 ?>
